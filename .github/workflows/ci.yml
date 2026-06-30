@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # Unit tests (parsing/normalization) + upstream contract drift guard.
+      # No `claude` CLI here, so live-inference tests are intentionally excluded.
+      - run: npm test

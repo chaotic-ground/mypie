@@ -1,0 +1,14 @@
+{
+  "name": "mypie",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Local writing tool reusing typie's editor with AI proofreading powered by Claude Code.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "scripts": {
+    "test": "node --test \"test/**/*.test.mjs\" \"packages/**/*.test.mjs\""
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

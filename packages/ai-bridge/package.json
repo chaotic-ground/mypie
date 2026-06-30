@@ -1,0 +1,20 @@
+{
+  "name": "@mypie/ai-bridge",
+  "version": "0.0.1",
+  "description": "Proofreading feedback bridge backed by Claude Code headless, shaped to typie's provide_feedback contract.",
+  "license": "AGPL-3.0-or-later",
+  "type": "module",
+  "exports": {
+    ".": "./src/feedback.mjs",
+    "./server": "./src/server.mjs"
+  },
+  "bin": {
+    "mypie-ai-bridge": "./bin/mypie-ai-bridge.mjs"
+  },
+  "scripts": {
+    "serve": "node ./bin/mypie-ai-bridge.mjs serve"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
