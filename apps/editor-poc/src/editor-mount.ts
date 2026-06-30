@@ -10,15 +10,20 @@ import type { Editor, EditorHost, Message, PlainDoc, Viewport } from '@typie/edi
 
 // A truly empty graph has no editable structure (insertion errors with
 // "offset out of bounds (len 0)"), so seed a doc with one empty paragraph.
+// Unstyled text resolves its font by family NAME; without a font_family it maps
+// to no registered family and falls back to a glyphless placeholder. Seed the
+// root with font_family=Pretendard so text inherits a registered family.
+const ROOT_MODIFIERS = { font_family: { type: 'font_family', value: 'Pretendard' } } as unknown as PlainDoc['root']['modifiers'];
+const EMPTY_MODIFIERS = {} as PlainDoc['root']['modifiers'];
 const EMPTY_DOC: PlainDoc = {
   root: {
     node: { type: 'root', layout_mode: { type: 'continuous', max_width: 800 } },
-    modifiers: {} as PlainDoc['root']['modifiers'],
+    modifiers: ROOT_MODIFIERS,
     children: [
       {
         node: { type: 'paragraph' },
-        modifiers: {} as PlainDoc['root']['modifiers'],
-        children: [{ node: { type: 'text', text: '' }, modifiers: {} as PlainDoc['root']['modifiers'], children: [] }],
+        modifiers: EMPTY_MODIFIERS,
+        children: [{ node: { type: 'text', text: '' }, modifiers: EMPTY_MODIFIERS, children: [] }],
       },
     ],
   },
@@ -27,13 +32,13 @@ const EMPTY_DOC: PlainDoc = {
 export type Feedback = { start: string; end: string; category: string; feedback: string };
 export type MountedFeedback = Feedback & { id: string; ok: boolean };
 
-// typie's default font family is 'Pretendard'; text whose font_family resolves
-// to an unregistered family renders no glyphs (and emits no font_data_missing).
-// add_font_base() expects ZSTD-COMPRESSED font bytes — a raw .ttf fails with a
-// zstd magic-number error. This bundled font is a Latin-only placeholder; swap
-// in a real Pretendard/Korean .ttf.zst for Korean glyph coverage.
-const DEFAULT_FAMILY = 'Pretendard';
-const DEFAULT_FONT_URL = `${import.meta.env.BASE_URL}poc-font.ttf.zst`;
+// typie's default font family is 'Pretendard'. Fonts are split into a zstd base
+// + per-codepoint chunks; a glyph only renders once its covering chunk is loaded,
+// otherwise text falls back to a glyphless placeholder (invisible). Pretendard is
+// preprocessed with editor-ffi's build_font (scripts/build-font.mjs) into
+// public/pretendard/{manifest.json, base.zst, chunk-N.zst}; we eager-load every
+// chunk at init so all glyphs are available.
+const FONT_DIR = `${import.meta.env.BASE_URL}pretendard`;
 
 let hostPromise: Promise<EditorHost> | undefined;
 
@@ -68,7 +73,6 @@ export class EditorMount {
   #raf = 0;
   #destroyed = false;
   #resizeObserver?: ResizeObserver;
-  #fontBytes?: Uint8Array;
 
   constructor(surfaceEl: HTMLElement, inputEl: HTMLTextAreaElement) {
     this.#surfaceEl = surfaceEl;
@@ -105,15 +109,27 @@ export class EditorMount {
     this.#loop();
   }
 
-  // Register the default family and supply its (zstd-compressed) base font so
-  // typed text has glyphs to render.
+  // Register Pretendard from its preprocessed base+chunks so typed text renders.
   async #loadDefaultFont(): Promise<void> {
     try {
-      this.#fontBytes = new Uint8Array(await fetch(DEFAULT_FONT_URL).then((r) => r.arrayBuffer()));
-      this.#host.set_fonts([{ name: DEFAULT_FAMILY, source: 'DEFAULT', weights: [{ value: 400, hash: 'local', chunks: [] }] }]);
-      this.#host.add_font_base(DEFAULT_FAMILY, 400, this.#fontBytes);
+      const fetchBytes = async (url: string) => new Uint8Array(await fetch(url).then((r) => r.arrayBuffer()));
+      const manifest = (await fetch(`${FONT_DIR}/manifest.json`).then((r) => r.json())) as {
+        family: string;
+        weight: number;
+        hash: string;
+        coverage: number[][];
+      };
+      const { family, weight, hash, coverage } = manifest;
+
+      // Manifest must be registered before add_font_base (it sizes the loaded-chunk bitmap).
+      this.#host.set_fonts([{ name: family, source: 'DEFAULT', weights: [{ value: weight, hash, chunks: coverage }] }]);
+      this.#host.add_font_base(family, weight, await fetchBytes(`${FONT_DIR}/base.zst`));
+      await Promise.all(
+        coverage.map(async (_, i) => {
+          this.#host.add_font_chunk(family, weight, i, await fetchBytes(`${FONT_DIR}/chunk-${i}.zst`));
+        }),
+      );
       this.#enqueue({ type: 'system', event: { type: 'fonts_changed' } });
-      this.#enqueue({ type: 'system', event: { type: 'font_base_loaded', family: DEFAULT_FAMILY, weight: 400 } });
     } catch (err) {
       console.warn('default font load failed:', err);
     }
@@ -141,16 +157,6 @@ export class EditorMount {
     for (const e of events) {
       if (e.type === 'state_changed' && e.fields.includes('page_sizes')) pagesChanged = true;
       if (e.type === 'render_invalidated') repaint = true;
-      // Best-effort: satisfy any font request with the bundled base font.
-      if (e.type === 'font_data_missing' && this.#fontBytes) {
-        try {
-          this.#host.add_font_base(e.family, e.weight, this.#fontBytes);
-          this.#enqueue({ type: 'system', event: { type: 'font_base_loaded', family: e.family, weight: e.weight } });
-          repaint = true;
-        } catch {
-          /* font may already be present */
-        }
-      }
     }
     if (pagesChanged) this.#reconcilePages();
     if (repaint || pagesChanged) this.#renderAll();

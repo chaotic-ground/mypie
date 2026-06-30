@@ -65,16 +65,20 @@ PoC: `apps/editor-poc` (Vite + Svelte 5, `@typie/editor-ffi/browser`만 의존, 
 - `add_font_base(family, weight, bytes)`는 **zstd 압축 폰트 바이트**를 받는다(원시 .ttf는 `BadMagicNumber` zstd 오류). icu.zst와 동일.
 
 렌더러(규명):
-- **CPU 렌더러다.** `crates/editor-ffi/src/platform/wasm_browser.rs`: `RenderBackend::new_cpu` → `render_surface`가 `render_page`(CPU 래스터)로 픽셀 버퍼를 채우고 `present()`가 canvas **2D 컨텍스트에 `putImageData`**. WebGL/WebGPU 아님(`getContext('webgl2')`=null이 정상). 즉 렌더는 **headless든 어디든 동작해야** 하고 GPU/RAF throttle 이슈가 아니다. 그동안 보인 흰 페이지는 canvas의 CSS `background:#fff`였고(배경을 빨강으로 바꾸면 통째 빨강 = GPU 미페인트 아님, **2D 버퍼가 투명**).
+- **CPU 렌더러다.** `crates/editor-ffi/src/platform/wasm_browser.rs`: `RenderBackend::new_cpu` → `render_surface`가 `render_page`(CPU 래스터)로 픽셀 버퍼를 채우고 `present()`가 canvas **2D 컨텍스트에 `putImageData`**. WebGL/WebGPU 아님(`getContext('webgl2')`=null 정상). 즉 렌더는 headless 포함 어디서든 동작한다(GPU/RAF 이슈 아님).
 
-미확인 (막힌 지점, 정직히):
-- **화면상 글자 렌더링.** 입력/레이아웃/캐럿/폰트로드(무오류)는 다 되는데, `render_surface`를 직접 1회 호출(루프 정지)해도 canvas 2D 픽셀이 **완전 투명(opaque 0)**. 즉 `render_page`가 Background 레이어조차 안 그린다. `render_page`는 `view.visit_page(page_idx, ...)`로 그리는데, `page_sizes()`/`cursor()`는 페이지·캐럿을 주므로 레이아웃은 존재. 웹사이트(동일 CPU 경로로 정상 렌더)와 우리 마운트의 **렌더 파라미터 차이**(scale_factor/theme resource/뷰포트/visit_page 전제)를 더 파야 함. 아키텍처 결론(직접 마운트 가능, fork/GraphQL 불필요)은 영향 없음.
+**해결됨 — 글자 렌더링 동작 (전 과정 검증).** 막혔던 원인은 두 가지였고 둘 다 해결:
+1. **폰트 서브셋**: typie 폰트는 glyf를 base에서 분리해 chunk로 전달하는 구조. 단순 전체 .ttf를 base로 넣으면 `font_registry.resolve`(`resolve.rs:103`)가 chunk-loaded 게이트를 못 넘어 **placeholder(624B, 글리프 없음)로 폴백** → 투명. 해결: `editor-ffi` **wasm-server 빌드의 `build_font`/`get_font_codepoints`**로 Pretendard를 정식 base+chunks+coverage로 가공(`scripts/build-font.mjs`), `set_fonts(coverage)` + `add_font_base` + 전 chunk `add_font_chunk`로 등록.
+2. **기본 font_family 누락**: 스타일 없는 텍스트는 family NAME으로 resolve하는데 빈 문서 텍스트엔 font_family가 없어 미등록 family로 풀려 또 placeholder. 해결: `EMPTY_DOC` root modifiers에 `font_family=Pretendard` 부여 → 텍스트가 상속.
+- 진단 키: selection highlight(폰트 무관)는 진작 그려졌고(opaque>0) 글리프만 0이었음 → 렌더 경로 OK, 폰트 resolve 문제로 좁혀짐. font_family를 명시 적용하니 dark(글리프) 픽셀 등장.
+
+**검사 결선 = WASM 직접 호출 (검증됨).** `editor.prose_text()` → ai-bridge(`claude -p`) → 텍스트 앵커를 `prose_text().indexOf(start)`로 prose offset 변환(=upstream `mapRange` 대응) → `prose_to_selection` → `tracked_range` `set_group_decoration`(빨간 물결 밑줄) + `add`. 실제로 "각 고객사 별"에 밑줄 + 사이드바 카드(맞춤법) 표시 확인.
 
 ## 단계별 계획
 
 1. **AI 브리지** — Claude Code headless 교정. (완료, `packages/ai-bridge`)
-2. **에디터 부팅 PoC** — WASM 직접 마운트로 빈 문서 렌더 + 타이핑 + 검사 하이라이트. (진행, `apps/editor-poc`) GraphQL stub 불필요로 판명(직접 마운트 경로).
-3. **검사 결선 고도화** — 사이드바 양방향 동기화, 스트리밍, 카테고리별 데코레이션.
+2. **에디터 부팅 PoC** — WASM 직접 마운트로 빈 문서 렌더 + 한글/영문 타이핑 + 검사 빨간밑줄/사이드바. (**완료, 전 과정 브라우저 검증**, `apps/editor-poc`) GraphQL stub 불필요, 폰트는 `build_font`로 가공.
+3. **검사 결선 고도화** — 사이드바 양방향 동기화(hover/click), 스트리밍, 카테고리별 데코레이션, 폰트 lazy-load(현재 전 chunk eager).
 4. **로컬 영속화** — 문서 저장/불러오기(CRDT graph 직렬화)를 로컬 파일/IndexedDB로.
 5. **데스크톱 포장** — Tauri/Electron/Servo. ai-bridge와 마운트는 평범한 웹/Node라 그대로 임베드.
 

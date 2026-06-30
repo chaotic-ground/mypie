@@ -42,5 +42,16 @@ RUST_LOG=off icu4x-datagen --markers-for-bin pkg/browser/editor_ffi_bg.wasm \
   --format blob --out "$blob"
 zstd -19 -f -o pkg/browser/icu.zst "$blob"
 
+# Server build (Node): exposes get_font_codepoints/build_font for scripts/build-font.mjs.
+echo "==> cargo build ($profile, wasm-server)"
+cargo build --manifest-path Cargo.toml --profile "$profile" \
+  --features wasm-server --target wasm32-unknown-unknown
+echo "==> wasm bindings (server)"
+cargo run --quiet -p editor-bindgen --features bin --bin wasm-bindgen-cli -- \
+  --target module --out-dir pkg/server \
+  "../../target/wasm32-unknown-unknown/$profile/editor_ffi.wasm"
+cargo run --quiet -p editor-bindgen --features bin --bin editor-bindgen-js -- \
+  pkg/server/editor_ffi
+
 echo "==> done:"
-ls -lh pkg/browser/
+ls -lh pkg/browser/ pkg/server/

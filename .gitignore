@@ -7,5 +7,5 @@ build/
 .env.*
 !.env.example
 
-# placeholder editor font (provide your own Pretendard .ttf.zst locally)
-apps/editor-poc/public/poc-font.ttf.zst
+# generated editor font assets (regenerate via scripts/build-font.mjs)
+apps/editor-poc/public/pretendard/
