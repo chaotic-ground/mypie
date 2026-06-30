@@ -1,3 +1,18 @@
 @layer reset, base, ui, tokens, recipes, utilities;
 
 @import url(@typie/ui/styles.css) layer(ui);
+
+/*
+ * Show only editor-related panel tabs. TopToolbar's tab group is the toolbar's
+ * last child, with a fixed button order (pinned submodule):
+ *   1 정보  2 노트  3 코멘트  4 맞춤법  5 AI 피드백  6 타임라인  7 본문 설정
+ * Keep AI(5) + 본문 설정(7); hide the GraphQL/backend-bound ones (incl. 타임라인,
+ * which is server revision history, not the local undo — that's the toolbar's ↶↷).
+ */
+.toptoolbar [role='toolbar'] > :last-child > button:nth-child(1),
+.toptoolbar [role='toolbar'] > :last-child > button:nth-child(2),
+.toptoolbar [role='toolbar'] > :last-child > button:nth-child(3),
+.toptoolbar [role='toolbar'] > :last-child > button:nth-child(4),
+.toptoolbar [role='toolbar'] > :last-child > button:nth-child(6) {
+  display: none;
+}

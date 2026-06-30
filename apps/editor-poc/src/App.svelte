@@ -119,17 +119,22 @@
 
 <div class="app">
   <header>
-    <strong>mypie</strong> · editor PoC
+    <strong>mypie</strong> · editor
     <button onclick={proofread} disabled={busy}>검사</button>
     <span class="status">{status}</span>
   </header>
 
   <HorizontalDivider color="secondary" />
-  <TopToolbar />
+  <!-- editor-related panel tabs only (AI + 본문 설정); see app.css .toptoolbar rule -->
+  <div class="toptoolbar"><TopToolbar /></div>
 
   <div class="body">
     <div class="editor-col">
-      <BottomToolbar fontFamilies={[]} onSearchClick={() => {}} onFontUploadClick={() => {}} />
+      <BottomToolbar
+        fontFamilies={[{ id: 'pretendard', familyName: 'Pretendard', displayName: 'Pretendard', state: 'ACTIVE', fonts: [{ weight: 400, state: 'ACTIVE' }] }]}
+        onSearchClick={() => {}}
+        onFontUploadClick={() => {}}
+      />
       <EditorComponent active document$key={localDoc}>
         {#snippet header()}
           <div class="doc-header">
