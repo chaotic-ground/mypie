@@ -6,3 +6,6 @@ build/
 .env
 .env.*
 !.env.example
+
+# placeholder editor font (provide your own Pretendard .ttf.zst locally)
+apps/editor-poc/public/poc-font.ttf.zst
