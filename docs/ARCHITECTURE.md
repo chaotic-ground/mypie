@@ -52,7 +52,18 @@ flowchart LR
 
 **검사 결선 = WASM 직접 호출.** `editor.prose_text()`로 평문 추출 → ai-bridge → 각 피드백의 텍스트 앵커를 `prose_text().indexOf(start)`로 prose offset(숫자)로 변환 → `editor.prose_to_selection(startOff, endOff)` → `enqueue({type:'tracked_range', op:{type:'set_group_decoration', group:'ai-feedback', ...}})` + `{op:{type:'add', id, group, selection}}`. **주의**: v2 에디터는 offset이 숫자이고 ai-bridge는 텍스트 앵커를 주므로, 이 indexOf 매핑(=upstream `mapRange` 대응)이 필요하다. 추후 ai-bridge에 offset 계산을 옮길 수 있다.
 
-PoC: `apps/editor-poc` (Vite + Svelte 5, `@typie/editor-ffi/browser`만 의존, vite alias로 submodule의 빌드 산출물 참조).
+PoC: `apps/editor-poc` (Vite + Svelte 5).
+
+### 방식 전환: 직접 마운트 → typie 뷰 레이어 재사용 (현재)
+
+직접 손으로 쓴 마운트는 포커스(클릭 시 native focus-steal), IME, 선택 등 미묘한 동작이 원본과 어긋났다. 그래서 **typie의 실제 뷰 레이어를 재사용**한다(재발명 금지). typie 소스를 복사(fork)하지 않고 vite `resolve.alias`로 가리킨다:
+- `$lib`→`upstream/typie/apps/website/src/lib`, `@typie/ui|lib|styled-system`→submodule 패키지.
+- 백엔드 의존은 shim: `$mearie`(createFragment→로컬 빈 문서), `$app/*`, `$env/dynamic/public`.
+- 호스트 `App.svelte`가 `setupThemeContext`+`setupEditorContext` 후 `Editor.createFromDoc(빈 문단, root font_family=Pretendard)` → `ctx.editor` 설정 → typie `<View>` 렌더. 검사는 래퍼의 `proseText`/`proseToSelection`/`addAiFeedback`(파란 데코, website와 동일) 재사용.
+
+선결(submodule-local, fresh clone 재현용): `scripts/setup-submodule.sh`(pnpm install + `@typie/styled-system` panda codegen + `.svelte-kit/tsconfig.json` stub) → `build-editor-ffi.sh` → `build-font.mjs`.
+
+핵심 함정: `resolve.dedupe:['svelte']` 필수(컨텍스트/룬 깨짐 방지), styled-system는 런타임 shim 불가(codegen 필수), `@typie/ui` 배럴이 `$app/*`를 끌어오므로 shim 필수, `~icons`는 unplugin-icons+lucide. 무거운 곁가지(toolbar/ExternalElement)는 빈 문서에선 렌더 안 되지만 빌드엔 포함(stub 불필요했음). 전 과정 headless Chrome 검증: 부팅→클릭 포커스(원본 위임)→한글/영문 타이핑→검사 파란 하이라이트+사이드바.
 
 ### 브라우저 검증 결과 (headless Chrome)
 

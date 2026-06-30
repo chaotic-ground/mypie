@@ -1,45 +1,38 @@
 # @mypie/editor-poc
 
-typie의 Rust→WASM 에디터를 **직접 마운트**하는 PoC. 웹사이트의 Svelte 뷰 레이어, mearie/GraphQL, `@typie/ui`, `@typie/styled-system` 없이 `@typie/editor-ffi/browser`만 사용한다.
+typie의 **실제 Svelte 에디터 뷰 레이어를 재사용**하는 PoC. 손으로 다시 만들지 않는다 — `upstream/typie`의 `editor-ffi/components/{View,Page,Input}.svelte` + `editor.svelte.ts` 래퍼를 vite alias로 그대로 렌더한다. 포커스/IME/선택/스크롤/렌더가 typie 웹사이트와 동일하게 동작하고, AI 검사 하이라이트도 래퍼의 `addAiFeedback`(파란 데코레이션)를 그대로 쓴다.
+
+typie 소스는 복사하지 않는다. vite `resolve.alias`로 `$lib`→submodule, `@typie/ui|lib|styled-system`→submodule 패키지를 가리키고, 백엔드 의존(`$mearie` GraphQL, `$app/*`, `$env`)은 `src/shims/`의 얇은 stub으로 대체한다(로컬 빈 문서).
 
 ## 사전 준비
 
-1. WASM 빌드 (한 번): submodule에서 editor-ffi를 빌드해 `pkg/browser/`를 채운다.
-   ```bash
-   ../../scripts/build-editor-ffi.sh
-   ```
-   vite alias가 이 산출물(`upstream/typie/crates/editor-ffi/pkg/browser/*`)을 참조한다.
-
-2. 폰트 가공: submodule의 Pretendard를 typie의 base+chunks 포맷으로 가공한다(`public/pretendard/` 생성).
-   ```bash
-   node ../../scripts/build-font.mjs
-   ```
-   (`build-editor-ffi.sh`가 wasm-server 빌드까지 마쳐야 `build_font`를 쓸 수 있다.) 이 산출물이 없으면 에디터는 떠도 글자가 placeholder로 폴백해 안 보인다.
+```bash
+# 1) submodule: pnpm install + styled-system codegen + .svelte-kit tsconfig stub
+../../scripts/setup-submodule.sh
+# 2) WASM (browser + server pkg)
+../../scripts/build-editor-ffi.sh
+# 3) 폰트(Pretendard base+chunks) → public/pretendard/
+node ../../scripts/build-font.mjs
+# 4) editor-poc 자체 deps
+npm install
+```
 
 ## 실행
 
 ```bash
-npm install
-npm run dev            # http://localhost:5173
-```
-
-검사 기능을 쓰려면 ai-bridge도 띄운다:
-```bash
+npm run dev          # http://localhost:5173
+# 검사 기능엔 ai-bridge 필요:
 node ../../packages/ai-bridge/bin/mypie-ai-bridge.mjs serve   # :4319
 ```
 
-## 마운트 요약 (`src/editor-mount.ts`)
+## 구조
 
-- `createInstance(wasm)` → `EditorHost.create(icu바이트)` → `create_editor_from_doc(빈 문단 문서)`.
-- `page_sizes()`마다 `<canvas>` 생성 + `attach_surface`, RAF 루프에서 `tick()`/`render_surface`.
-- 입력: 숨김 textarea. 타이핑/IME는 `text_input` `replace_selection`으로 enqueue(웹사이트 ime-input-adapter와 동일). 클릭(`selection set_at`)으로 캐럿을 잡는다.
-- 검사: `prose_text()` → ai-bridge → 텍스트 앵커를 prose offset으로(`indexOf`) → `prose_to_selection` → `tracked_range`(group `ai-feedback`, 빨간 물결 밑줄).
+- `vite.config.ts` — alias(`$lib`, `@typie/*`→submodule; `$mearie`/`$app/*`/`$env`→shim) + unplugin-icons(lucide+typie 컬렉션) + `resolve.dedupe:['svelte']`(필수) + `server.fs.allow`(submodule 포함).
+- `src/shims/` — `mearie.ts`(graphql identity tag, createFragment→로컬 빈 문서 `{id, editorFontFamilies:[]}`, createClient/mutation 등 inert), `app-{navigation,state,environment}.ts`, `env-dynamic-public.ts`, `fonts-local.ts`(Pretendard 등록).
+- `src/App.svelte` — `setupThemeContext()`+`setupEditorContext()` → `Editor.createFromDoc(빈 문단, root font_family=Pretendard)` → `ctx.editor` 설정 → `<View document$key={{}} active/>` 렌더. 검사는 `editor.proseText()`→ai-bridge→`proseToSelection`+`addAiFeedback`.
 
-## 검증 상태 / 한계
+## 동작 확인 (headless Chrome)
 
-전 과정 동작(headless Chrome 검증): WASM 부팅 → 한글+영문 타이핑 렌더(Pretendard) → 검사 버튼 → ai-bridge → "각 고객사 별"에 빨간 물결 밑줄 + 사이드바 카드. 외부 의존성은 `@typie/editor-ffi/browser`뿐.
+부팅 → 클릭 시 typie 숨김 textarea 포커스(원본 focusin 위임) → 한글/영문 타이핑 렌더(Pretendard) → 검사 → "각 고객사 별"에 파란 하이라이트 + 사이드바 카드. 전부 typie 원본 로직.
 
-핵심 함정(둘 다 해결):
-- 렌더러는 **CPU**(2D `putImageData`, WebGL 아님 → headless 무관). 흰 페이지는 canvas CSS 배경이었음.
-- **폰트**: typie는 glyf를 base+chunk로 분리하는 서브셋 구조라 전체 .ttf를 그냥 넣으면 placeholder(글리프 없음)로 폴백. `scripts/build-font.mjs`(wasm-server `build_font`)로 정식 base+chunks 생성 후 `set_fonts`+`add_font_base`+`add_font_chunk`.
-- **기본 font_family**: 스타일 없는 텍스트는 family NAME으로 resolve하므로 `EMPTY_DOC` root에 `font_family=Pretendard`를 줘야 글리프가 나옴.
+알려진 거친 부분(PoC): 페이지 컨테이너 레이아웃이 website만큼 다듬어지지 않음(중앙 정렬/페이지 박스 없음). 에디터 기능 자체는 동일.

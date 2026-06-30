@@ -1,25 +1,68 @@
 import { fileURLToPath } from 'node:url';
 import { svelte } from '@sveltejs/vite-plugin-svelte';
+import { FileSystemIconLoader } from 'unplugin-icons/loaders';
+import Icons from 'unplugin-icons/vite';
 import { defineConfig } from 'vite';
 
-const ffi = (p: string) =>
-  fileURLToPath(new URL(`../../upstream/typie/crates/editor-ffi/pkg/browser/${p}`, import.meta.url));
+// upstream/typie submodule + local shim path helpers
+const up = (p: string) => fileURLToPath(new URL(`../../upstream/typie/${p}`, import.meta.url));
+const shim = (p: string) => fileURLToPath(new URL(`./src/shims/${p}`, import.meta.url));
+const ffi = (p: string) => up(`crates/editor-ffi/pkg/browser/${p}`);
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
 export default defineConfig({
-  plugins: [svelte()],
+  plugins: [
+    svelte(),
+    Icons({
+      compiler: 'svelte',
+      scale: 1,
+      customCollections: {
+        typie: FileSystemIconLoader(up('apps/website/src/icons')),
+      },
+    }),
+  ],
   resolve: {
+    // One Svelte 5 runtime across editor-poc + submodule, or context/runes break.
+    dedupe: ['svelte'],
     alias: [
-      // Regex finds tolerate (and re-append via $1) the ?url query, and the
-      // exact bare match does not shadow the /wasm and /icu.zst subpaths.
+      // built editor-ffi wasm/icu (regex tolerate ?url via $1)
       { find: /^@typie\/editor-ffi\/browser\/wasm(\?.*)?$/, replacement: `${ffi('editor_ffi_bg.wasm')}$1` },
       { find: /^@typie\/editor-ffi\/browser\/icu\.zst(\?.*)?$/, replacement: `${ffi('icu.zst')}$1` },
       { find: /^@typie\/editor-ffi\/browser$/, replacement: ffi('editor_ffi.js') },
+
+      // local shims (data layer + sveltekit runtime)
+      { find: '$mearie', replacement: shim('mearie.ts') },
+      { find: '@mearie/svelte', replacement: shim('mearie.ts') },
+      { find: '$app/navigation', replacement: shim('app-navigation.ts') },
+      { find: '$app/state', replacement: shim('app-state.ts') },
+      { find: '$app/environment', replacement: shim('app-environment.ts') },
+      { find: '$env/dynamic/public', replacement: shim('env-dynamic-public.ts') },
+
+      // typie website source (View subtree)
+      { find: '$lib', replacement: up('apps/website/src/lib') },
+
+      // @typie workspace packages -> source/generated (anchored regex per exports map)
+      { find: /^@typie\/ui\/styles\.css$/, replacement: up('packages/ui/styles/index.css') },
+      { find: /^@typie\/ui\/(.+)$/, replacement: up('packages/ui/src/$1/index.ts') },
+      { find: /^@typie\/styled-system\/(css|patterns|tokens|types)$/, replacement: up('packages/styled-system/styled-system/$1/index.js') },
+      { find: /^@typie\/styled-system$/, replacement: up('packages/styled-system/src/index.ts') },
+      { find: /^@typie\/lib\/(dayjs|svelte)$/, replacement: up('packages/lib/src/$1/index.ts') },
+      { find: /^@typie\/lib\/postcss$/, replacement: up('packages/lib/src/postcss/index.js') },
+      { find: /^@typie\/lib\/(const|enums|errors|validation)$/, replacement: up('packages/lib/src/$1.ts') },
+      { find: /^@typie\/lib$/, replacement: up('packages/lib/src/index.ts') },
     ],
   },
   server: {
-    // The editor-ffi build artifacts live in the submodule, outside this app.
-    fs: { allow: [repoRoot] },
+    fs: { allow: [repoRoot, up('.')] },
+  },
+  optimizeDeps: {
+    exclude: ['@typie/editor-ffi'],
+  },
+  // Submodule tsconfigs extend a SvelteKit-generated .svelte-kit/tsconfig.json
+  // that we never sync; force an inline tsconfig so the transform doesn't try
+  // to load (missing) per-file project configs.
+  esbuild: {
+    tsconfigRaw: { compilerOptions: { target: 'esnext', useDefineForClassFields: true } },
   },
   build: {
     target: 'esnext',
