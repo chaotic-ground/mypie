@@ -46,7 +46,7 @@ test('normalize: maps quote -> start/end and falls back category', () => {
   assert.equal(out.length, 1);
   assert.equal(out[0].start, '하루 한 회 데일리');
   assert.equal(out[0].end, '하루 한 회 데일리');
-  assert.equal(out[0].category, '가독성'); // unknown/missing -> default
+  assert.equal(out[0].category, '기타'); // missing category -> default (free-form otherwise)
 });
 
 test('normalize: drops items with empty feedback', () => {
