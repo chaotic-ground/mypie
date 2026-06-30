@@ -1,28 +1,32 @@
 <script lang="ts">
   import './app.css';
-  import { setupThemeContext } from '@typie/ui/context';
-  import { onMount } from 'svelte';
+  import { BottomToolbar, Editor as EditorComponent, TopToolbar } from '$lib/editor-ffi/components';
   import { browserScaleFactor, Editor, getEditorContext, setupEditorContext } from '$lib/editor-ffi/editor.svelte';
-  import View from '$lib/editor-ffi/components/View.svelte';
+  import { HorizontalDivider } from '@typie/ui/components';
+  import { setupAppContext, setupThemeContext } from '@typie/ui/context';
+  import { onMount } from 'svelte';
+  import PanelHost from './PanelHost.svelte';
   import { registerLocalPretendard } from './shims/fonts-local';
+  import { getPane, getPaneGroup } from './shims/pane-context.svelte';
   import type { PlainDoc } from '@typie/editor-ffi/browser';
 
   const BRIDGE_URL = 'http://127.0.0.1:4319/feedback';
 
-  // Contexts must exist before View's getThemeContext()/getEditorContext() run.
+  // Contexts must exist before editor components call
+  // getThemeContext()/getAppContext()/getEditorContext().
   const theme = setupThemeContext();
+  setupAppContext('local');
   setupEditorContext();
   const ctx = getEditorContext();
+  const paneGroup = getPaneGroup();
+  const paneId = getPane().id;
 
-  // Theme attrs so styled-system color tokens resolve.
   if (typeof document !== 'undefined') {
     document.documentElement.dataset.theme = 'light';
     document.documentElement.dataset.variantLight = 'white';
     document.documentElement.dataset.variantDark = 'black';
   }
 
-  // Blank doc seeded with root font_family=Pretendard so unstyled text resolves
-  // to a registered family (else it falls back to a glyphless placeholder).
   const EMPTY_DOC = {
     root: {
       node: { type: 'root', layout_mode: { type: 'continuous', max_width: 800 } },
@@ -37,12 +41,17 @@
     },
   } as unknown as PlainDoc;
 
-  type Card = { id: string; ok: boolean; start: string; end: string; category: string | null; feedback: string };
+  const localDoc = {}; // opaque fragment key; the mearie shim ignores it
+
   let status = $state('에디터 로딩 중…');
   let busy = $state(false);
-  let cards = $state<Card[]>([]);
 
-  const localDoc = {}; // opaque fragment key; the mearie shim ignores it
+  // localized title/subtitle: plain $state (no updateDocument mutation),
+  // navigation keydown kept verbatim from DocumentEditor.
+  let localTitle = $state('');
+  let localSubtitle = $state('');
+  let titleEl = $state<HTMLTextAreaElement>();
+  let subtitleEl = $state<HTMLTextAreaElement>();
 
   onMount(() => {
     let editor: Editor | undefined;
@@ -61,19 +70,24 @@
     return () => editor?.destroy();
   });
 
+  function openAiPanel() {
+    paneGroup.state.current.panelTabByPaneId = { ...paneGroup.state.current.panelTabByPaneId, [paneId]: 'ai' };
+    paneGroup.state.current.panelExpandedByPaneId = { ...paneGroup.state.current.panelExpandedByPaneId, [paneId]: true };
+  }
+
   async function proofread() {
     const editor = ctx.editor;
     if (!editor || busy) return;
     busy = true;
+    openAiPanel();
     status = '검사 중… (Claude Code)';
     try {
       const text = editor.proseText();
+      editor.clearAiFeedbacks();
       if (!text.trim()) {
         status = '본문이 비어 있습니다.';
-        cards = [];
         return;
       }
-      editor.clearAiFeedbacks();
       const res = await fetch(BRIDGE_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -81,23 +95,19 @@
       });
       if (!res.ok) throw new Error(`bridge ${res.status}`);
       const data = (await res.json()) as { feedback: { start: string; end: string; category: string; feedback: string }[] };
-      cards = data.feedback.map((fb, i) => {
-        const id = `ai-feedback:${i}`;
+      let placed = 0;
+      data.feedback.forEach((fb, i) => {
         const s = text.indexOf(fb.start);
-        let ok = false;
-        if (s >= 0) {
-          const e = fb.end ? text.indexOf(fb.end, s) : -1;
-          const end = e >= 0 ? e + fb.end.length : s + fb.start.length;
-          const selection = editor.proseToSelection(s, end);
-          if (selection) {
-            editor.addAiFeedback({ id, selection, startText: fb.start, endText: fb.end, feedback: fb.feedback, category: fb.category });
-            ok = true;
-          }
+        if (s < 0) return;
+        const e = fb.end ? text.indexOf(fb.end, s) : -1;
+        const end = e >= 0 ? e + fb.end.length : s + fb.start.length;
+        const selection = editor.proseToSelection(s, end);
+        if (selection) {
+          editor.addAiFeedback({ id: `ai-feedback:${i}`, selection, startText: fb.start, endText: fb.end, feedback: fb.feedback, category: fb.category });
+          placed++;
         }
-        return { id, ok, start: fb.start, end: fb.end, category: fb.category, feedback: fb.feedback };
       });
-      const placed = cards.filter((c) => c.ok).length;
-      status = `지적 ${cards.length}건 (본문 표시 ${placed}건)`;
+      status = `지적 ${data.feedback.length}건 (본문 표시 ${placed}건)`;
     } catch (err) {
       status = `검사 실패: ${(err as Error).message} — ai-bridge 서버가 떠 있나요?`;
       console.error(err);
@@ -114,26 +124,60 @@
     <span class="status">{status}</span>
   </header>
 
-  <main>
-    <div class="editor">
-      <View document$key={localDoc} active useWindowScroll={false} style={{ flexGrow: '1' }} />
+  <HorizontalDivider color="secondary" />
+  <TopToolbar />
+
+  <div class="body">
+    <div class="editor-col">
+      <BottomToolbar fontFamilies={[]} onSearchClick={() => {}} onFontUploadClick={() => {}} />
+      <EditorComponent active document$key={localDoc}>
+        {#snippet header()}
+          <div class="doc-header">
+            <textarea
+              bind:this={titleEl}
+              class="title"
+              maxlength={100}
+              placeholder="제목을 입력하세요"
+              rows={1}
+              spellcheck="false"
+              bind:value={localTitle}
+              onkeydown={(e) => {
+                if (e.isComposing) return;
+                if (e.key === 'Enter' || (!e.altKey && e.key === 'ArrowDown')) {
+                  e.preventDefault();
+                  subtitleEl?.focus();
+                }
+              }}
+            ></textarea>
+            <textarea
+              bind:this={subtitleEl}
+              class="subtitle"
+              maxlength={100}
+              placeholder="부제목을 입력하세요"
+              rows={1}
+              spellcheck="false"
+              bind:value={localSubtitle}
+              onkeydown={(e) => {
+                if (e.isComposing) return;
+                if ((!e.altKey && e.key === 'ArrowUp') || (e.key === 'Backspace' && !localSubtitle)) {
+                  e.preventDefault();
+                  titleEl?.focus();
+                }
+                if (e.key === 'Enter' || (!e.altKey && e.key === 'ArrowDown') || (e.key === 'Tab' && !e.shiftKey)) {
+                  e.preventDefault();
+                  ctx.editor?.focus();
+                  ctx.editor?.enqueue({ type: 'navigation', op: { type: 'move', movement: { type: 'document', direction: 'backward' }, extend: false } });
+                }
+              }}
+            ></textarea>
+            <HorizontalDivider style={{ marginTop: '10px' }} />
+          </div>
+        {/snippet}
+      </EditorComponent>
     </div>
 
-    <aside>
-      <h2>지적사항 <span class="count">{cards.length}</span></h2>
-      {#if cards.length === 0}
-        <p class="empty">검사를 실행하면 여기에 표시됩니다.</p>
-      {:else}
-        {#each cards as c, i (c.id)}
-          <div class="card" class:miss={!c.ok}>
-            <div class="card-top"><span class="num">{i + 1}</span>{#if c.category}<span class="type">{c.category}</span>{/if}{#if !c.ok}<span class="warn">위치 못 찾음</span>{/if}</div>
-            <div class="quote">{c.start}{c.end && c.end !== c.start ? ` … ${c.end}` : ''}</div>
-            <div class="note">{c.feedback}</div>
-          </div>
-        {/each}
-      {/if}
-    </aside>
-  </main>
+    <PanelHost />
+  </div>
 </div>
 
 <style>
@@ -141,113 +185,14 @@
     margin: 0;
     font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   }
-  .app {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 8px 14px;
-    border-bottom: 1px solid #e4e4e7;
-    font-size: 14px;
-  }
-  header button {
-    padding: 5px 14px;
-    border: 1px solid #c1272d;
-    background: #e5484d;
-    color: #fff;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-  header button:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-  .status {
-    color: #6b7280;
-    font-size: 13px;
-  }
-  main {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-  }
-  .editor {
-    flex: 1;
-    min-height: 0;
-    min-width: 0;
-    display: flex;
-  }
-  aside {
-    flex: 0 0 360px;
-    border-left: 1px solid #e4e4e7;
-    overflow-y: auto;
-    padding: 16px;
-  }
-  aside h2 {
-    font-size: 15px;
-    margin: 0 0 12px;
-  }
-  .count {
-    color: #6b7280;
-    font-weight: 400;
-  }
-  .empty {
-    color: #6b7280;
-    font-size: 13px;
-  }
-  .card {
-    border: 1px solid #e4e4e7;
-    border-radius: 8px;
-    padding: 10px 12px;
-    margin-bottom: 10px;
-  }
-  .card.miss {
-    opacity: 0.6;
-  }
-  .card-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 6px;
-  }
-  .num {
-    font-size: 12px;
-    font-weight: 700;
-    color: #fff;
-    background: #e5484d;
-    border-radius: 999px;
-    padding: 1px 7px;
-  }
-  .type {
-    font-size: 12px;
-    font-weight: 600;
-    color: #c1272d;
-    background: #fde8e8;
-    border-radius: 5px;
-    padding: 1px 7px;
-  }
-  .warn {
-    font-size: 11px;
-    color: #92400e;
-    background: #fef3c7;
-    border-radius: 5px;
-    padding: 1px 6px;
-  }
-  .quote {
-    font-size: 13px;
-    color: #6b7280;
-    border-left: 3px solid #e4e4e7;
-    padding-left: 8px;
-    margin-bottom: 6px;
-    white-space: pre-wrap;
-  }
-  .note {
-    font-size: 13px;
-    line-height: 1.5;
-  }
+  .app { display: flex; flex-direction: column; height: 100vh; }
+  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-size: 14px; }
+  header button { padding: 5px 14px; border: 1px solid #c1272d; background: #e5484d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  header button:disabled { opacity: 0.5; cursor: default; }
+  .status { color: #6b7280; font-size: 13px; }
+  .body { display: flex; flex: 1; min-height: 0; }
+  .editor-col { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
+  .doc-header { display: flex; flex-direction: column; align-items: center; padding-top: 40px; width: 100%; }
+  .title { border: 0; outline: 0; width: 100%; max-width: 800px; font-size: 28px; font-weight: 700; resize: none; }
+  .subtitle { border: 0; outline: 0; width: 100%; max-width: 800px; margin-top: 4px; font-size: 16px; font-weight: 500; resize: none; overflow: hidden; }
 </style>

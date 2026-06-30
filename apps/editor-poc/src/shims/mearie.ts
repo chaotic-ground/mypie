@@ -7,7 +7,13 @@ export function graphql(strings: TemplateStringsArray, ...values: unknown[]): st
   return String.raw({ raw: strings }, ...values);
 }
 
-const LOCAL_DOCUMENT = { id: 'local-blank', editorFontFamilies: [] as never[] };
+const LOCAL_DOCUMENT = {
+  id: 'local-blank',
+  editorFontFamilies: [] as never[],
+  entity: { id: 'local-entity' },
+  subscription: { id: 'local-sub' },
+  preferences: { aiOptIn: true },
+};
 
 // createFragment(def, () => key) -> reactive holder with always-defined .data.
 export function createFragment(_def: unknown, _key?: () => unknown) {
@@ -44,8 +50,8 @@ export function createQuery(_def: unknown, _vars?: () => unknown) {
   };
 }
 
-export function createSubscription(_def: unknown, _vars?: () => unknown) {
-  /* no-op */
+export function createSubscription(..._args: unknown[]) {
+  /* no-op; tolerates (def), (def, vars), (def, vars, opts) */
 }
 
 // $lib/graphql/client.ts builds a client at module load and calls

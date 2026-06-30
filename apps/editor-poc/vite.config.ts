@@ -10,8 +10,20 @@ const shim = (p: string) => fileURLToPath(new URL(`./src/shims/${p}`, import.met
 const ffi = (p: string) => up(`crates/editor-ffi/pkg/browser/${p}`);
 const repoRoot = fileURLToPath(new URL('../..', import.meta.url));
 
+// Redirect any import of the route's @pane/context.svelte (relative paths of
+// varying depth, so a string alias can't catch them) to our singleton shim.
+const shimPaneContext = {
+  name: 'shim-pane-context',
+  enforce: 'pre' as const,
+  resolveId(source: string) {
+    if (source.includes('@pane/context.svelte')) return shim('pane-context.svelte.ts');
+    return null;
+  },
+};
+
 export default defineConfig({
   plugins: [
+    shimPaneContext,
     svelte(),
     Icons({
       compiler: 'svelte',
@@ -37,6 +49,9 @@ export default defineConfig({
       { find: '$app/state', replacement: shim('app-state.ts') },
       { find: '$app/environment', replacement: shim('app-environment.ts') },
       { find: '$env/dynamic/public', replacement: shim('env-dynamic-public.ts') },
+      { find: 'mixpanel-browser', replacement: shim('mixpanel.ts') },
+      // reused settings panel (absolute alias avoids brittle (dashboard)/[slug] relative resolution)
+      { find: '@doc-panel-settings', replacement: up('apps/website/src/routes/website/(dashboard)/[slug]/v2/@document-panel/DocumentPanelSettings.svelte') },
 
       // typie website source (View subtree)
       { find: '$lib', replacement: up('apps/website/src/lib') },

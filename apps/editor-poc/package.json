@@ -18,5 +18,8 @@
     "typescript": "^5.9.0",
     "unplugin-icons": "^23.0.1",
     "vite": "^8.0.16"
+  },
+  "dependencies": {
+    "es-hangul": "^2.3.8"
   }
 }
