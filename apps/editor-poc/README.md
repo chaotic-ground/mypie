@@ -33,6 +33,7 @@ node ../../packages/ai-bridge/bin/mypie-ai-bridge.mjs serve   # :4319
 
 ## 검증 상태 / 한계
 
-- 확인됨: WASM 부팅, 빈 문서 페이지 렌더(흰 페이지), 한글+영문 입력이 모델에 반영(`prose_text()` 일치), 외부 의존성 없음(`@typie/editor-ffi/browser`만).
-- 미확인: **화면상 글자 렌더링.** headless/백그라운드 탭에서는 WebGL + RAF throttle로 확인이 어렵고, 플레이스홀더 폰트가 typie의 base 서브셋 포맷과 다를 수 있다. 실제 포그라운드 브라우저 + 정식 Pretendard `.ttf.zst`로 확인 필요.
-- `font_data_missing` 이벤트는 현재 환경에서 관측되지 않아, 기본 폰트를 init에서 능동적으로 `add_font_base`로 공급한다(이벤트가 오면 처리하는 핸들러도 둠).
+- 확인됨: WASM 부팅, 한글+영문 입력이 모델에 반영(`prose_text()` 일치), 캐럿 위치 계산(`cursor()`), 폰트 무오류 로드, 외부 의존성 없음(`@typie/editor-ffi/browser`만). RAF 60fps 정상.
+- 렌더러는 **CPU**다: `render_surface`가 CPU로 래스터해 canvas **2D 컨텍스트에 `putImageData`**(WebGL/WebGPU 아님 → headless 무관).
+- **막힌 지점: 화면상 글자 렌더링.** 루프를 멈추고 `render_surface`를 직접 호출해도 2D canvas가 완전 투명(`render_page`가 Background조차 안 그림). 레이아웃은 존재(page_sizes/cursor)하므로, 웹사이트의 정상 CPU 렌더 경로와 우리 마운트의 렌더 파라미터(scale_factor/theme/뷰포트/visit_page 전제) 차이를 더 파야 한다. 그동안 보인 "흰 페이지"는 canvas의 CSS 배경이었다.
+- `font_data_missing` 이벤트는 관측되지 않아 기본 폰트를 init에서 능동적으로 `add_font_base`로 공급한다(이벤트 핸들러도 둠).

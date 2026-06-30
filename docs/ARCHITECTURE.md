@@ -64,8 +64,11 @@ PoC: `apps/editor-poc` (Vite + Svelte 5, `@typie/editor-ffi/browser`만 의존, 
 - 기본 family는 **`Pretendard`**. 텍스트의 font_family가 미등록 family로 풀리면 글리프가 안 그려지고 `font_data_missing`도 안 나온다.
 - `add_font_base(family, weight, bytes)`는 **zstd 압축 폰트 바이트**를 받는다(원시 .ttf는 `BadMagicNumber` zstd 오류). icu.zst와 동일.
 
-미확인(정직히):
-- **화면상 글자 렌더링.** 폰트가 무오류로 로드돼도 글리프가 안 보였다(canvas 다크픽셀 0, 스크린샷 흰 화면). 원인 후보: (a) headless WebGL + 백그라운드 탭 RAF throttle(preserveDrawingBuffer 없으면 readback/스크린샷이 비어 보임), (b) 플레이스홀더 라틴 TTF가 typie의 "base" 서브셋 포맷과 달라 글리프 미생성. → 실제 포그라운드 브라우저 + 정식 Pretendard `.ttf.zst`로 재확인 필요. 아키텍처 결론(직접 마운트 가능, fork/GraphQL 불필요)은 영향 없음.
+렌더러(규명):
+- **CPU 렌더러다.** `crates/editor-ffi/src/platform/wasm_browser.rs`: `RenderBackend::new_cpu` → `render_surface`가 `render_page`(CPU 래스터)로 픽셀 버퍼를 채우고 `present()`가 canvas **2D 컨텍스트에 `putImageData`**. WebGL/WebGPU 아님(`getContext('webgl2')`=null이 정상). 즉 렌더는 **headless든 어디든 동작해야** 하고 GPU/RAF throttle 이슈가 아니다. 그동안 보인 흰 페이지는 canvas의 CSS `background:#fff`였고(배경을 빨강으로 바꾸면 통째 빨강 = GPU 미페인트 아님, **2D 버퍼가 투명**).
+
+미확인 (막힌 지점, 정직히):
+- **화면상 글자 렌더링.** 입력/레이아웃/캐럿/폰트로드(무오류)는 다 되는데, `render_surface`를 직접 1회 호출(루프 정지)해도 canvas 2D 픽셀이 **완전 투명(opaque 0)**. 즉 `render_page`가 Background 레이어조차 안 그린다. `render_page`는 `view.visit_page(page_idx, ...)`로 그리는데, `page_sizes()`/`cursor()`는 페이지·캐럿을 주므로 레이아웃은 존재. 웹사이트(동일 CPU 경로로 정상 렌더)와 우리 마운트의 **렌더 파라미터 차이**(scale_factor/theme resource/뷰포트/visit_page 전제)를 더 파야 함. 아키텍처 결론(직접 마운트 가능, fork/GraphQL 불필요)은 영향 없음.
 
 ## 단계별 계획
 
