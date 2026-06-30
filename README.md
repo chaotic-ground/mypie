@@ -6,7 +6,7 @@
 
 ## typie와의 관계
 
-mypie는 typie를 **fork 하지 않습니다.** upstream typie를 git submodule(`upstream/typie`)로 핀 고정해 참조하고, 그 위에 얇은 레이어만 더합니다. 오픈소스 생태계를 갈라치지 않고 확장하는 것이 목표입니다.
+mypie는 typie를 **fork 하지 않습니다.** upstream typie를 git submodule(`upstream/typie`)로 핀 고정해 참조하고, 그 위에 얇은 레이어만 더합니다. 오픈소스 생태계를 파편화하지 않고 확장하는 것이 목표입니다.
 
 - upstream: `penxle/typie` (현재 `31a3d5e` 핀)
 - typie 본체를 로컬에서 따로 쓰려면: `git clone https://github.com/penxle/typie ~/git/typie`
