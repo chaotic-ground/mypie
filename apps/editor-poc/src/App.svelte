@@ -1,5 +1,5 @@
 <script lang="ts">
-  import '@typie/ui/styles.css';
+  import './app.css';
   import { setupThemeContext } from '@typie/ui/context';
   import { onMount } from 'svelte';
   import { browserScaleFactor, Editor, getEditorContext, setupEditorContext } from '$lib/editor-ffi/editor.svelte';
