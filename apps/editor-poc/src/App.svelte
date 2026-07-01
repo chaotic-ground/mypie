@@ -8,6 +8,7 @@
   import PanelHost from './PanelHost.svelte';
   import { registerLocalPretendard } from './shims/fonts-local';
   import { getPane, getPaneGroup } from './shims/pane-context.svelte';
+  import { loadSession, saveSession } from './session';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { PlainDoc } from '@typie/editor-ffi/browser';
 
@@ -65,22 +66,98 @@
   let titleEl = $state<HTMLTextAreaElement>();
   let subtitleEl = $state<HTMLTextAreaElement>();
 
+  // Session persistence: once restored, auto-save the doc + title/subtitle so a
+  // restart comes back to the same place. See ./session.ts.
+  let ready = false;
+  let lastHeadsKey = '';
+  let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  function headsKey(): string {
+    try {
+      return Array.from(ctx.editor?.currentHeads() ?? []).join(',');
+    } catch {
+      return '';
+    }
+  }
+
+  function persistNow() {
+    const editor = ctx.editor;
+    if (!editor || !ready) return;
+    try {
+      const doc = editor.materializeAt(editor.currentHeads());
+      saveSession({ v: 1, doc, title: localTitle, subtitle: localSubtitle });
+    } catch (err) {
+      console.error('persist failed', err);
+    }
+  }
+
+  function scheduleSave() {
+    if (!ready) return;
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(persistNow, 600);
+  }
+
+  // Re-save when the title/subtitle change; the body is covered by the heads poll.
+  $effect(() => {
+    void localTitle;
+    void localSubtitle;
+    scheduleSave();
+  });
+
   onMount(() => {
     let editor: Editor | undefined;
+    let poll: ReturnType<typeof setInterval> | undefined;
+    const onBeforeUnload = () => persistNow();
+
     (async () => {
-      editor = await Editor.createFromDoc(EMPTY_DOC, { width: 1, height: 1, scale_factor: browserScaleFactor() }, theme.currentThemeVariant);
+      const saved = loadSession();
+      const viewport = { width: 1, height: 1, scale_factor: browserScaleFactor() };
+      // Restore the last session's document if there is one; fall back to empty.
+      try {
+        editor = await Editor.createFromDoc((saved?.doc as PlainDoc) ?? EMPTY_DOC, viewport, theme.currentThemeVariant);
+      } catch (err) {
+        console.error('restore doc failed, starting empty', err);
+        editor = await Editor.createFromDoc(EMPTY_DOC, viewport, theme.currentThemeVariant);
+      }
       ctx.editor = editor;
       ctx.liveEditor = editor;
       editor.installAiFeedbackDecorations();
       await registerLocalPretendard();
       editor.enqueue({ type: 'system', event: { type: 'fonts_changed' } });
-      status = '준비됨. 본문을 클릭하고 입력해 보세요.';
+
+      localTitle = saved?.title ?? '';
+      localSubtitle = saved?.subtitle ?? '';
+      lastHeadsKey = headsKey();
+      ready = true;
+      status = saved?.doc ? '이전 작업을 복원했습니다.' : '준비됨. 본문을 클릭하고 입력해 보세요.';
+
+      // The editor exposes no change callback, so poll its version (heads) and
+      // debounce-save when it advances.
+      poll = setInterval(() => {
+        const key = headsKey();
+        if (key && key !== lastHeadsKey) {
+          lastHeadsKey = key;
+          scheduleSave();
+        }
+      }, 1000);
+      window.addEventListener('beforeunload', onBeforeUnload);
     })().catch((err) => {
       status = `에디터 초기화 실패: ${err.message}`;
       console.error(err);
     });
-    return () => editor?.destroy();
+
+    return () => {
+      if (poll) clearInterval(poll);
+      clearTimeout(saveTimer);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      editor?.destroy();
+    };
   });
+
+  async function closeWindow() {
+    persistNow(); // save the final state before the window goes away
+    await appWindow?.close();
+  }
 
   function openAiPanel() {
     paneGroup.state.current.panelTabByPaneId = { ...paneGroup.state.current.panelTabByPaneId, [paneId]: 'ai' };
@@ -177,7 +254,7 @@
         <button class="win-btn" title="최대화" aria-label="최대화" onclick={() => appWindow?.toggleMaximize()}>
           <svg width="12" height="12" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.1" /></svg>
         </button>
-        <button class="win-btn close" title="닫기" aria-label="닫기" onclick={() => appWindow?.close()}>
+        <button class="win-btn close" title="닫기" aria-label="닫기" onclick={closeWindow}>
           <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.2" /></svg>
         </button>
       </div>
