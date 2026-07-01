@@ -8,6 +8,7 @@
   import PanelHost from './PanelHost.svelte';
   import { registerLocalPretendard } from './shims/fonts-local';
   import { getPane, getPaneGroup } from './shims/pane-context.svelte';
+  import { getCurrentWindow } from '@tauri-apps/api/window';
   import type { PlainDoc } from '@typie/editor-ffi/browser';
 
   // In dev, hit the same-origin path proxied to the ai-bridge by the vite dev
@@ -15,6 +16,13 @@
   // loopback issues. In a prod build there's no proxy, so use the bridge directly.
   // /stream returns NDJSON so feedback appears as the model writes it (typie-style).
   const STREAM_URL = import.meta.env.DEV ? '/ai-bridge/feedback/stream' : 'http://127.0.0.1:4319/feedback/stream';
+
+  // Custom title bar: the window is borderless (decorations:false) in the Tauri
+  // desktop shell, so we draw our own drag region + window buttons. In the
+  // browser dev server there's no Tauri, so hide them and skip the drag region.
+  const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+  const appWindow = isTauri ? getCurrentWindow() : null;
+  const dragAttr = isTauri ? '' : undefined;
 
   // Contexts must exist before editor components call
   // getThemeContext()/getAppContext()/getEditorContext().
@@ -157,10 +165,23 @@
 </script>
 
 <div class="app">
-  <header>
-    <strong>mypie</strong> · editor
-    <button onclick={proofread} disabled={busy}>검사</button>
-    <span class="status">{status}</span>
+  <header data-tauri-drag-region={dragAttr}>
+    <strong data-tauri-drag-region={dragAttr}>mypie</strong>
+    <button class="proofread" onclick={proofread} disabled={busy}>검사</button>
+    <span class="status" data-tauri-drag-region={dragAttr}>{status}</span>
+    {#if isTauri}
+      <div class="win-controls">
+        <button class="win-btn" title="최소화" aria-label="최소화" onclick={() => appWindow?.minimize()}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><rect x="1.5" y="5.6" width="9" height="1.1" fill="currentColor" /></svg>
+        </button>
+        <button class="win-btn" title="최대화" aria-label="최대화" onclick={() => appWindow?.toggleMaximize()}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><rect x="2" y="2" width="8" height="8" fill="none" stroke="currentColor" stroke-width="1.1" /></svg>
+        </button>
+        <button class="win-btn close" title="닫기" aria-label="닫기" onclick={() => appWindow?.close()}>
+          <svg width="12" height="12" viewBox="0 0 12 12"><path d="M2 2 L10 10 M10 2 L2 10" stroke="currentColor" stroke-width="1.2" /></svg>
+        </button>
+      </div>
+    {/if}
   </header>
 
   <HorizontalDivider color="secondary" />
@@ -230,10 +251,19 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif;
   }
   .app { display: flex; flex-direction: column; height: 100vh; }
-  header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; font-size: 14px; }
-  header button { padding: 5px 14px; border: 1px solid #c1272d; background: #e5484d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  header button:disabled { opacity: 0.5; cursor: default; }
+  header {
+    display: flex; align-items: center; gap: 12px;
+    height: 40px; padding: 0 0 0 14px; font-size: 14px;
+    user-select: none; -webkit-user-select: none;
+  }
+  header .proofread { padding: 5px 14px; border: 1px solid #c1272d; background: #e5484d; color: #fff; border-radius: 6px; cursor: pointer; font-size: 13px; }
+  header .proofread:disabled { opacity: 0.5; cursor: default; }
   .status { color: #6b7280; font-size: 13px; }
+  /* borderless-window controls, flush to the top-right corner */
+  .win-controls { margin-left: auto; align-self: stretch; display: flex; }
+  .win-btn { display: inline-flex; align-items: center; justify-content: center; width: 46px; height: 100%; padding: 0; border: 0; background: transparent; color: #4b5563; cursor: pointer; }
+  .win-btn:hover { background: rgba(0, 0, 0, 0.08); }
+  .win-btn.close:hover { background: #e5484d; color: #fff; }
   .body { display: flex; flex: 1; min-height: 0; }
   .editor-col { display: flex; flex-direction: column; flex: 1; min-height: 0; min-width: 0; }
   .doc-header { display: flex; flex-direction: column; align-items: center; padding-top: 40px; width: 100%; }

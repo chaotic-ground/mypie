@@ -22,6 +22,7 @@
     "vite": "^8.0.16"
   },
   "dependencies": {
+    "@tauri-apps/api": "^2.11.1",
     "es-hangul": "^2.3.8"
   }
 }
