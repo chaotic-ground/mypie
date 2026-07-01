@@ -1,9 +1,10 @@
 // Minimal dependency-free HTTP server exposing the proofreading bridge.
-// POST /feedback  { "text": "..." }  -> { "feedback": [ {start,end,category,feedback}, ... ] }
-// GET  /health                       -> { "ok": true }
+// POST /feedback         { "text": "..." } -> { "feedback": [ {start,end,category,feedback}, ... ] }
+// POST /feedback/stream  { "text": "..." } -> NDJSON stream of {type:'item'|'progress'|'done'|'error', ...}
+// GET  /health                             -> { "ok": true }
 
 import { createServer } from 'node:http';
-import { analyze } from './feedback.mjs';
+import { analyze, analyzeStream } from './feedback.mjs';
 
 const readBody = (req, limit = 1_000_000) =>
   new Promise((resolve, reject) => {
@@ -48,6 +49,41 @@ export const createBridgeServer = (opts = {}) =>
       } catch (err) {
         send(res, 400, { error: err.message });
       }
+      return;
+    }
+    if (req.method === 'POST' && req.url === '/feedback/stream') {
+      // Stream feedback items as the model writes them (typie-style). The
+      // response is NDJSON: one {type,...} object per line, flushed immediately.
+      const ac = new AbortController();
+      res.on('close', () => ac.abort()); // client disconnected -> kill claude
+      let text;
+      try {
+        ({ text } = JSON.parse(await readBody(req)));
+      } catch (err) {
+        send(res, 400, { error: err.message });
+        return;
+      }
+      res.writeHead(200, {
+        'content-type': 'application/x-ndjson; charset=utf-8',
+        'access-control-allow-origin': '*',
+        'cache-control': 'no-cache, no-transform',
+        'x-accel-buffering': 'no', // ask proxies not to buffer
+      });
+      const write = (obj) => res.write(`${JSON.stringify(obj)}\n`);
+      try {
+        const count = await analyzeStream(
+          text,
+          {
+            onItem: (item) => write({ type: 'item', item }),
+            onProgress: (p) => write({ type: 'progress', ...p }),
+          },
+          { ...opts, signal: ac.signal },
+        );
+        write({ type: 'done', count });
+      } catch (err) {
+        if (!ac.signal.aborted) write({ type: 'error', error: err.message });
+      }
+      res.end();
       return;
     }
     send(res, 404, { error: 'not found' });

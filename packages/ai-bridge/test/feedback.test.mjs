@@ -1,32 +1,40 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { extractArray, normalize } from '../src/feedback.mjs';
+import { normalize, parseItems, parseLine } from '../src/feedback.mjs';
 
-test('extractArray: claude json envelope', () => {
-  const envelope = JSON.stringify({
-    type: 'result',
-    result: '[{"start":"가","end":"나","feedback":"f","category":"비문"}]',
-  });
-  assert.deepEqual(extractArray(envelope), [
+test('parseItems: JSONL (one object per line)', () => {
+  const jsonl = '{"start":"가","end":"나","feedback":"f","category":"비문"}\n{"start":"다","end":"다","feedback":"g","category":"맞춤법"}';
+  assert.deepEqual(parseItems(jsonl), [
     { start: '가', end: '나', feedback: 'f', category: '비문' },
+    { start: '다', end: '다', feedback: 'g', category: '맞춤법' },
   ]);
 });
 
-test('extractArray: fenced code block inside result', () => {
-  const envelope = JSON.stringify({
-    result: '여기 결과입니다:\n```json\n[{"start":"가","end":"가","feedback":"f"}]\n```\n',
-  });
-  assert.deepEqual(extractArray(envelope), [{ start: '가', end: '가', feedback: 'f' }]);
+test('parseItems: skips prose/blank lines between objects', () => {
+  const messy = '분석 결과:\n\n{"start":"가","end":"가","feedback":"f"}\n감사합니다.';
+  assert.deepEqual(parseItems(messy), [{ start: '가', end: '가', feedback: 'f' }]);
 });
 
-test('extractArray: raw array (no envelope)', () => {
-  assert.deepEqual(extractArray('[{"start":"가","end":"가","feedback":"f"}]'), [
+test('parseItems: tolerates a fenced code block', () => {
+  const fenced = '여기 결과입니다:\n```json\n{"start":"가","end":"가","feedback":"f"}\n```\n';
+  assert.deepEqual(parseItems(fenced), [{ start: '가', end: '가', feedback: 'f' }]);
+});
+
+test('parseItems: tolerates a whole JSON array', () => {
+  assert.deepEqual(parseItems('[{"start":"가","end":"가","feedback":"f"}]'), [
     { start: '가', end: '가', feedback: 'f' },
   ]);
 });
 
-test('extractArray: throws when no array present', () => {
-  assert.throws(() => extractArray('미안하지만 배열이 없어요'));
+test('parseItems: empty output -> no items', () => {
+  assert.deepEqual(parseItems('   \n\n'), []);
+});
+
+test('parseLine: parses one object, rejects non-JSON', () => {
+  assert.deepEqual(parseLine('{"start":"가","feedback":"f"}'), { start: '가', feedback: 'f' });
+  assert.equal(parseLine('분석 중…'), null);
+  assert.equal(parseLine('```json'), null);
+  assert.equal(parseLine(''), null);
 });
 
 test('normalize: drops items whose start is not in the source text', () => {

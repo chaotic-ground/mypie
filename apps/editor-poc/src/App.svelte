@@ -13,7 +13,8 @@
   // In dev, hit the same-origin path proxied to the ai-bridge by the vite dev
   // server (vite.config server.proxy) — avoids cross-origin CORS / Firefox
   // loopback issues. In a prod build there's no proxy, so use the bridge directly.
-  const BRIDGE_URL = import.meta.env.DEV ? '/ai-bridge/feedback' : 'http://127.0.0.1:4319/feedback';
+  // /stream returns NDJSON so feedback appears as the model writes it (typie-style).
+  const STREAM_URL = import.meta.env.DEV ? '/ai-bridge/feedback/stream' : 'http://127.0.0.1:4319/feedback/stream';
 
   // Contexts must exist before editor components call
   // getThemeContext()/getAppContext()/getEditorContext().
@@ -78,39 +79,74 @@
     paneGroup.state.current.panelExpandedByPaneId = { ...paneGroup.state.current.panelExpandedByPaneId, [paneId]: true };
   }
 
+  type Feedback = { start: string; end: string; category: string; feedback: string };
+
+  // Place one streamed feedback item onto the editor (highlight + panel card).
+  // Returns true if it anchored to a document range.
+  function placeFeedback(editor: Editor, text: string, fb: Feedback, id: number): boolean {
+    const s = text.indexOf(fb.start);
+    if (s < 0) return false;
+    const e = fb.end ? text.indexOf(fb.end, s) : -1;
+    const end = e >= 0 ? e + fb.end.length : s + fb.start.length;
+    const selection = editor.proseToSelection(s, end);
+    if (!selection) return false;
+    editor.addAiFeedback({ id: `ai-feedback:${id}`, selection, startText: fb.start, endText: fb.end, feedback: fb.feedback, category: fb.category });
+    return true;
+  }
+
   async function proofread() {
     const editor = ctx.editor;
     if (!editor || busy) return;
     busy = true;
     openAiPanel();
     status = '검사 중… (Claude Code)';
+    const text = editor.proseText();
+    editor.clearAiFeedbacks();
+    if (!text.trim()) {
+      status = '본문이 비어 있습니다.';
+      busy = false;
+      return;
+    }
+    let got = 0;
+    let placed = 0;
     try {
-      const text = editor.proseText();
-      editor.clearAiFeedbacks();
-      if (!text.trim()) {
-        status = '본문이 비어 있습니다.';
-        return;
-      }
-      const res = await fetch(BRIDGE_URL, {
+      const res = await fetch(STREAM_URL, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ text }),
       });
-      if (!res.ok) throw new Error(`bridge ${res.status}`);
-      const data = (await res.json()) as { feedback: { start: string; end: string; category: string; feedback: string }[] };
-      let placed = 0;
-      data.feedback.forEach((fb, i) => {
-        const s = text.indexOf(fb.start);
-        if (s < 0) return;
-        const e = fb.end ? text.indexOf(fb.end, s) : -1;
-        const end = e >= 0 ? e + fb.end.length : s + fb.start.length;
-        const selection = editor.proseToSelection(s, end);
-        if (selection) {
-          editor.addAiFeedback({ id: `ai-feedback:${i}`, selection, startText: fb.start, endText: fb.end, feedback: fb.feedback, category: fb.category });
-          placed++;
+      if (!res.ok || !res.body) throw new Error(`bridge ${res.status}`);
+      // Read the NDJSON stream and surface each item the moment it arrives.
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = '';
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl: number;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (!line) continue;
+          const msg = JSON.parse(line) as
+            | { type: 'item'; item: Feedback }
+            | { type: 'progress'; phase?: string }
+            | { type: 'done'; count: number }
+            | { type: 'error'; error: string };
+          if (msg.type === 'progress') {
+            status = '분석 중… (Claude Code)';
+          } else if (msg.type === 'item') {
+            got++;
+            if (placeFeedback(editor, text, msg.item, got)) placed++;
+            status = `분석 중… 지적 ${got}건`;
+          } else if (msg.type === 'done') {
+            status = got ? `지적 ${msg.count}건 (본문 표시 ${placed}건)` : '지적할 부분이 없습니다.';
+          } else if (msg.type === 'error') {
+            throw new Error(msg.error);
+          }
         }
-      });
-      status = `지적 ${data.feedback.length}건 (본문 표시 ${placed}건)`;
+      }
     } catch (err) {
       status = `검사 실패: ${(err as Error).message} — ai-bridge 서버가 떠 있나요?`;
       console.error(err);

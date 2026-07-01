@@ -29,13 +29,17 @@ node bin/mypie-ai-bridge.mjs --file draft.txt
 # HTTP 서버 (기본 127.0.0.1:4319)
 node bin/mypie-ai-bridge.mjs serve --port 4319
 curl -s localhost:4319/feedback -d '{"text":"각 고객사 별 통계"}'
+
+# 스트리밍 (NDJSON: 모델이 쓰는 대로 항목이 한 줄씩)
+curl -Ns localhost:4319/feedback/stream -d '{"text":"각 고객사 별 통계"}'
 ```
 
 라이브러리로:
 
 ```js
-import { analyze } from '@mypie/ai-bridge';
-const feedback = await analyze('각 고객사 별 통계');
+import { analyze, analyzeStream } from '@mypie/ai-bridge';
+const feedback = await analyze('각 고객사 별 통계'); // 전체를 한 번에
+await analyzeStream('각 고객사 별 통계', { onItem: (it) => console.log(it) }); // 도착하는 대로
 ```
 
 ## 요구사항 / 환경변수
