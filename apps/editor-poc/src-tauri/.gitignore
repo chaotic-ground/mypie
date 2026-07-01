@@ -1,0 +1,6 @@
+/target
+/gen/schemas
+
+# desktop-only app: mobile icon sets aren't used by the bundle
+/icons/android
+/icons/ios

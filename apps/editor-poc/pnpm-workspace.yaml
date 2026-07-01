@@ -1,0 +1,6 @@
+# pnpm 11 keeps build-script settings here (no longer in package.json).
+# esbuild's build script is harmless (its platform binary works); approve it so
+# the deps-status check before `pnpm run`/`exec` doesn't abort every command.
+allowBuilds:
+  esbuild: true
+verifyDepsBeforeRun: false

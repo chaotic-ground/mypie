@@ -7,13 +7,15 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
   "devDependencies": {
     "@iconify-json/lucide": "^1.2.113",
     "@pandacss/dev": "^1.11.4",
     "@pandacss/preset-base": "^1.11.4",
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
+    "@tauri-apps/cli": "^2.11.4",
     "svelte": "^5.56.3",
     "typescript": "^5.9.0",
     "unplugin-icons": "^23.0.1",
