@@ -9,7 +9,10 @@ import App from './App.svelte';
 //   Infinity = full crispness (slow on hidpi+large docs)
 //   1.5      = balanced (default; ~mild blur, meaningfully faster)
 //   1        = fastest (~75% less raster at dpr2), noticeably soft on retina
-const RENDER_SCALE_CAP = 1.5;
+// Override live via URL for hands-on comparison, e.g. ?scale=1 (fastest),
+// ?scale=1.5 (default), ?scale=99 (full crispness). Falls back to 1.5.
+const scaleParam = Number(new URLSearchParams(location.search).get('scale'));
+const RENDER_SCALE_CAP = scaleParam > 0 ? scaleParam : 1.5;
 const realDpr = window.devicePixelRatio || 1;
 if (realDpr > RENDER_SCALE_CAP) {
   try {
