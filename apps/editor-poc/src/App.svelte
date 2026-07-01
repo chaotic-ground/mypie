@@ -10,7 +10,10 @@
   import { getPane, getPaneGroup } from './shims/pane-context.svelte';
   import type { PlainDoc } from '@typie/editor-ffi/browser';
 
-  const BRIDGE_URL = 'http://127.0.0.1:4319/feedback';
+  // In dev, hit the same-origin path proxied to the ai-bridge by the vite dev
+  // server (vite.config server.proxy) — avoids cross-origin CORS / Firefox
+  // loopback issues. In a prod build there's no proxy, so use the bridge directly.
+  const BRIDGE_URL = import.meta.env.DEV ? '/ai-bridge/feedback' : 'http://127.0.0.1:4319/feedback';
 
   // Contexts must exist before editor components call
   // getThemeContext()/getAppContext()/getEditorContext().

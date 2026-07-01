@@ -69,6 +69,16 @@ export default defineConfig({
   },
   server: {
     fs: { allow: [repoRoot, up('.')] },
+    // Same-origin proxy to the ai-bridge so the browser never makes a
+    // cross-origin request (avoids CORS + Firefox loopback quirks). App fetches
+    // /ai-bridge/feedback -> 127.0.0.1:4319/feedback.
+    proxy: {
+      '/ai-bridge': {
+        target: 'http://127.0.0.1:4319',
+        changeOrigin: true,
+        rewrite: (p) => p.replace(/^\/ai-bridge/, ''),
+      },
+    },
   },
   optimizeDeps: {
     exclude: ['@typie/editor-ffi'],
