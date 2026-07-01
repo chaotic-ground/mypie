@@ -91,7 +91,11 @@ export const analyze = (text, opts = {}) => {
   }
 
   const bin = opts.claudeBin || process.env.MYPIE_CLAUDE_BIN || 'claude';
-  const args = ['-p', '--output-format', 'json'];
+  // Skip loading things this one-shot proofread never uses: all MCP servers
+  // (--strict-mcp-config with no --mcp-config) and project/local settings
+  // (skills, CLAUDE.md, plugins, hooks). Keep `user` sources so auth + model
+  // config still resolve. Trims Claude Code startup; auth/model unaffected.
+  const args = ['-p', '--output-format', 'json', '--strict-mcp-config', '--setting-sources', 'user'];
   const model = opts.model || process.env.MYPIE_CLAUDE_MODEL;
   if (model) {
     args.push('--model', model);
