@@ -91,7 +91,7 @@ PoC: `apps/editor-poc` (Vite + Svelte 5).
 2. **에디터 부팅 PoC** — WASM 직접 마운트로 빈 문서 렌더 + 한글/영문 타이핑 + 검사 빨간밑줄/사이드바. (**완료, 전 과정 브라우저 검증**, `apps/editor-poc`) GraphQL stub 불필요, 폰트는 `build_font`로 가공.
 3. **검사 결선 고도화** — 스트리밍(완료, 항목이 완성되는 대로 밑줄/카드 표시). 남은 것: 사이드바 양방향 동기화(hover/click), 카테고리별 데코레이션, 폰트 lazy-load(현재 전 chunk eager).
 4. **로컬 영속화** — 세션 자동 저장/복원(문서 + 제목/부제)을 localStorage로. (완료, `src/session.ts`) 명시적 저장/불러오기(CRDT graph 직렬화, 다중 문서)는 남음.
-5. **데스크톱 포장** — Tauri v2 셸(무테 창 + 커스텀 타이틀바), 실행 시 ai-bridge 동반 기동·종료. (완료, `apps/editor-poc/src-tauri`)
+5. **데스크톱 포장** — Tauri v2 셸(무테 창 + 커스텀 타이틀바), 실행 시 ai-bridge 동반 기동·종료. (완료, `apps/editor-poc/src-tauri`) 배포는 소스 네이티브 빌드만. AppImage는 빌드 머신의 webkit2gtk를 번들해서 다른 배포판의 EGL/Mesa에서 렌더가 깨질 수 있어(우분투 빌드를 Fedora에서 실행하면 재현) 제공하지 않는다.
 
 ## 비결정/리스크
 

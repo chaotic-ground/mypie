@@ -61,3 +61,5 @@ cd apps/editor-poc
 pnpm tauri build                   # 릴리즈 바이너리 빌드 (webkit2gtk-4.1 / GTK3 필요)
 ../../scripts/install-desktop.sh   # .desktop 런처 생성 (앱 실행 시 ai-bridge 동반 기동)
 ```
+
+미리 빌드된 AppImage는 제공하지 않습니다. Tauri의 AppImage는 빌드 머신의 webkit2gtk를 번들하는데, 이게 다른 배포판의 EGL/Mesa와 맞지 않아 화면이 아예 그려지지 않는 경우가 있었습니다(우분투 빌드를 Fedora에서 실행 시 확인). 사용하는 배포판에서 직접 빌드하면 시스템 webkit을 쓰므로 이 문제가 없습니다.

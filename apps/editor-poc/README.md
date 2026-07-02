@@ -34,7 +34,7 @@ pnpm tauri build                   # 릴리즈 빌드 (webkit2gtk-4.1 / GTK3 필
 ../../scripts/install-desktop.sh   # .desktop 런처 생성
 ```
 
-dev 서버(`tauri dev` 포함)에선 ai-bridge를 위처럼 따로 띄우고, 번들 빌드에선 앱이 ai-bridge를 리소스로 동반 기동한다(종료 시 함께 kill).
+dev 서버(`tauri dev` 포함)에선 ai-bridge를 위처럼 따로 띄우고, 릴리즈 빌드에선 앱이 ai-bridge를 리소스로 동반 기동한다(종료 시 함께 kill).
 
 ## 구조
 

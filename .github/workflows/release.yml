@@ -1,96 +1,23 @@
 name: Release
 
-# Builds the Tauri desktop app on a GitHub-hosted runner and attaches the
-# AppImage to a GitHub Release. Cut a release by pushing a version tag
-# (e.g. `v0.1.0`); `workflow_dispatch` can rebuild an existing one.
+# Creates a GitHub Release (auto-generated notes) when a version tag is
+# pushed. The app itself is installed by building from source — see README.
 on:
   push:
     tags:
       - "v*.*.*"
-  workflow_dispatch:
-    inputs:
-      tag:
-        description: "Release tag (e.g. v0.1.0). Created at the current commit if it does not exist."
-        required: true
 
 permissions:
   contents: read
 
 jobs:
-  desktop:
-    # webkit2gtk-4.1 and the AppImage tooling are most reliable on 22.04.
-    runs-on: ubuntu-22.04
+  release:
+    runs-on: ubuntu-latest
     permissions:
-      contents: write # create the release and upload the AppImage
-    env:
-      # Run bundled AppImages (linuxdeploy) without FUSE, which CI runners lack.
-      APPIMAGE_EXTRACT_AND_RUN: 1
+      contents: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: softprops/action-gh-release@2bb465e97f322d3cb2a965294d483e0d26a67aa9 # v3.0.1
         with:
-          submodules: recursive
-          persist-credentials: false
-
-      - name: System dependencies (GTK3 / webkit2gtk-4.1 / bundler)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential curl wget file \
-            libwebkit2gtk-4.1-dev libgtk-3-dev \
-            libayatana-appindicator3-dev librsvg2-dev \
-            libsoup-3.0-dev patchelf zstd libfuse2
-
-      - name: Rust toolchain
-        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30 # stable
-        with:
-          targets: wasm32-unknown-unknown
-
-      - name: Install icu4x-datagen (icu blob preprocessing)
-        run: cargo install icu4x-datagen
-
-      - uses: actions/setup-node@v6
-        with:
-          node-version: 22
-
-      - name: Enable pnpm
-        run: corepack enable
-
-      # Prepare the upstream/typie submodule and build the WASM editor + font
-      # bundle the editor-poc frontend needs. See docs/ARCHITECTURE.md.
-      - name: Prepare submodule
-        run: bash scripts/setup-submodule.sh
-
-      - name: Build editor-ffi WASM
-        run: bash scripts/build-editor-ffi.sh
-
-      - name: Build Pretendard font bundle
-        run: node scripts/build-font.mjs
-
-      - name: Install editor-poc dependencies
-        working-directory: apps/editor-poc
-        run: pnpm install
-
-      - name: Build desktop app (Tauri)
-        working-directory: apps/editor-poc
-        run: pnpm tauri build
-
-      - name: Collect AppImage
-        run: |
-          set -euo pipefail
-          mkdir -p dist-release
-          appimages=(apps/editor-poc/src-tauri/target/release/bundle/appimage/*.AppImage)
-          [ -e "${appimages[0]}" ] || { echo "no AppImage produced" >&2; exit 1; }
-          cp "${appimages[@]}" dist-release/
-          ls -lh dist-release
-
-      - name: Publish release
-        uses: softprops/action-gh-release@2bb465e97f322d3cb2a965294d483e0d26a67aa9 # v3.0.1
-        with:
-          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
-          name: ${{ github.event.inputs.tag || github.ref_name }}
           generate_release_notes: true
-          append_body: true
-          fail_on_unmatched_files: true
-          files: dist-release/*
           body: |
-            데스크톱 앱 실행에는 Node.js와 Claude Code CLI(`claude`)가 PATH에 있어야 합니다. AI 검사는 로컬에서 `claude -p`로 구동됩니다.
+            소스에서 빌드해 설치합니다. 데스크톱 앱 빌드 방법은 [README](https://github.com/chaotic-ground/mypie#readme)를 참고하세요.

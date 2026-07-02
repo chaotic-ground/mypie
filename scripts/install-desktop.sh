@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Install a desktop launcher for the built mypie app.
+# Install a desktop launcher for the built mypie app (native release binary).
 #
-# Points at the AppImage if one was bundled, otherwise the raw release binary.
 # The Exec runs through `bash -lc` so the app inherits the login shell PATH —
 # the bundled ai-bridge spawns `node` (asdf shim) which spawns `claude`
 # (~/.local/bin), neither of which is on the bare desktop-session PATH.
@@ -9,17 +8,9 @@ set -euo pipefail
 
 REPO_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 APP_DIR="$REPO_ROOT/apps/editor-poc"
-BUNDLE_DIR="$APP_DIR/src-tauri/target/release/bundle"
-RAW_BIN="$APP_DIR/src-tauri/target/release/mypie"
+BIN="$APP_DIR/src-tauri/target/release/mypie"
 
-target=""
-appimage=$(ls -1 "$BUNDLE_DIR"/appimage/*.AppImage 2>/dev/null | head -n1 || true)
-if [[ -n "$appimage" ]]; then
-  chmod +x "$appimage"
-  target="$appimage"
-elif [[ -x "$RAW_BIN" ]]; then
-  target="$RAW_BIN"
-else
+if [[ ! -x "$BIN" ]]; then
   echo "error: no built app found. Build it first:  (cd $APP_DIR && pnpm tauri build)" >&2
   exit 1
 fi
@@ -35,7 +26,7 @@ cat > "$desktop_file" <<EOF
 Type=Application
 Name=mypie
 Comment=Local writing editor with Claude Code proofreading
-Exec=bash -lc "exec $target"
+Exec=bash -lc "exec $BIN"
 Icon=mypie
 Terminal=false
 Categories=Utility;TextEditor;
@@ -46,4 +37,4 @@ update-desktop-database "$apps_dir" 2>/dev/null || true
 gtk-update-icon-cache -f -t "$HOME/.local/share/icons/hicolor" 2>/dev/null || true
 
 echo "installed: $desktop_file"
-echo "   -> $target"
+echo "   -> $BIN"
