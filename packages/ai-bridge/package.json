@@ -1,6 +1,6 @@
 {
   "name": "@mypie/ai-bridge",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "description": "Proofreading feedback bridge backed by Claude Code headless, shaped to typie's provide_feedback contract.",
   "license": "AGPL-3.0-or-later",
   "type": "module",
