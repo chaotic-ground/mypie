@@ -36,7 +36,7 @@ cargo run --quiet -p editor-bindgen --features bin --bin editor-bindgen-js -- \
   pkg/browser/editor_ffi
 
 echo "==> icu blob"
-blob="$(mktemp --suffix=.blob)"
+blob="$(mktemp -u --suffix=.blob)"
 trap 'rm -f "$blob"' EXIT
 RUST_LOG=off icu4x-datagen --markers-for-bin pkg/browser/editor_ffi_bg.wasm \
   --format blob --out "$blob"
