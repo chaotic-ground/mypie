@@ -2,7 +2,7 @@
 
 ## 목표
 
-typie의 글쓰기 에디터를 그대로 쓰면서, AI 검사(첨삭/피드백)만 Claude Code headless로 구동하는 로컬 도구. 지금은 로컬 서버, 추후 데스크톱 앱(Tauri/Electron/Servo)으로 포장.
+typie의 글쓰기 에디터를 그대로 쓰면서, AI 검사(첨삭/피드백)만 Claude Code headless로 구동하는 로컬 도구. 에디터 뷰 레이어를 재사용해 로컬 에디터로 띄우고, Tauri 데스크톱 앱으로 포장한다(앱을 켜면 ai-bridge가 함께 기동).
 
 ## typie 구조 실측 (왜 단순 import가 안 되는가)
 
@@ -31,12 +31,12 @@ flowchart LR
   bridge["@mypie/ai-bridge\n(로컬 HTTP / 라이브러리)"] -->|claude -p| cc["Claude Code headless"]
   cc -->|JSON feedback| bridge
   bridge -->|start/end/feedback/category| editor
-  editor <-->|문서 로드/저장| stub["stub 백엔드\n(GraphQL 최소 구현 / 로컬 파일)"]
+  editor <-->|세션 저장/복원| store["localStorage 세션\n(문서 + 제목/부제)"]
 ```
 
-- **`@mypie/ai-bridge`** (동작): `claude -p --output-format json`을 spawn해 교정 피드백을 만든다. 의존성 없는 Node ESM. 라이브러리(`analyze`) + HTTP 서버(`POST /feedback`) + CLI.
-- **stub 백엔드** (예정): typie 에디터가 요구하는 최소 GraphQL 표면(문서 로드/저장 등)만 구현하거나, 로컬 파일/localStorage로 대체. 인증/구독/요금제 게이트는 무력화. 이게 가장 불확실하고 큰 작업이다.
-- **프론트엔드 통합** (예정): `upstream/typie`의 에디터 모듈을 빌드해 단일 로컬 문서를 띄우고, 검사 액션을 ai-bridge로 연결.
+- **`@mypie/ai-bridge`** (동작): `claude -p`를 spawn해 교정 피드백을 만든다. 의존성 없는 Node ESM. 라이브러리(`analyze`/`analyzeStream`) + HTTP 서버(`POST /feedback`, 스트리밍 `POST /feedback/stream`) + CLI.
+- **백엔드 대체** (동작): typie 에디터의 백엔드 의존(`$mearie` GraphQL, `$app/*`, `$env`)은 GraphQL stub을 세우는 대신 얇은 shim으로 끊었다(로컬 빈 문서). 문서 상태는 localStorage 세션으로 영속화한다.
+- **프론트엔드 통합** (동작): `upstream/typie`의 에디터 뷰 레이어를 vite alias로 재사용해 단일 로컬 문서를 띄우고, 검사 액션을 ai-bridge에 결선한다(`apps/editor-poc`).
 
 ## Phase 2 검증 (WASM 빌드 + 직접 마운트)
 
@@ -89,11 +89,11 @@ PoC: `apps/editor-poc` (Vite + Svelte 5).
 
 1. **AI 브리지** — Claude Code headless 교정. (완료, `packages/ai-bridge`)
 2. **에디터 부팅 PoC** — WASM 직접 마운트로 빈 문서 렌더 + 한글/영문 타이핑 + 검사 빨간밑줄/사이드바. (**완료, 전 과정 브라우저 검증**, `apps/editor-poc`) GraphQL stub 불필요, 폰트는 `build_font`로 가공.
-3. **검사 결선 고도화** — 사이드바 양방향 동기화(hover/click), 스트리밍, 카테고리별 데코레이션, 폰트 lazy-load(현재 전 chunk eager).
-4. **로컬 영속화** — 문서 저장/불러오기(CRDT graph 직렬화)를 로컬 파일/IndexedDB로.
-5. **데스크톱 포장** — Tauri/Electron/Servo. ai-bridge와 마운트는 평범한 웹/Node라 그대로 임베드.
+3. **검사 결선 고도화** — 스트리밍(완료, 항목이 완성되는 대로 밑줄/카드 표시). 남은 것: 사이드바 양방향 동기화(hover/click), 카테고리별 데코레이션, 폰트 lazy-load(현재 전 chunk eager).
+4. **로컬 영속화** — 세션 자동 저장/복원(문서 + 제목/부제)을 localStorage로. (완료, `src/session.ts`) 명시적 저장/불러오기(CRDT graph 직렬화, 다중 문서)는 남음.
+5. **데스크톱 포장** — Tauri v2 셸(무테 창 + 커스텀 타이틀바), 실행 시 ai-bridge 동반 기동·종료. (완료, `apps/editor-poc/src-tauri`)
 
 ## 비결정/리스크
 
-- typie 에디터를 website 앱과 분리해 띄우는 비용(2단계)이 미지수. 분리가 너무 비싸면 website 앱 전체를 stub 백엔드와 함께 띄우는 쪽으로 선회.
-- Claude Code headless는 에이전트라 단발 추론보다 지연이 크다. 스트리밍 피드백 UX는 추후 `--output-format stream-json`으로 검토.
+- typie 에디터를 website 앱과 분리해 띄우는 비용(2단계)은 뷰 레이어를 vite alias로 재사용하고 백엔드 의존을 shim으로 끊어 해결했다(fork 0). website 앱 전체를 띄우는 폴백은 불필요했다.
+- Claude Code headless는 에이전트라 단발 추론보다 지연이 크다. 스트리밍 피드백(`--output-format stream-json`)으로 항목이 완성되는 대로 표시해 체감 지연을 줄였다.
